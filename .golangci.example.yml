@@ -1,0 +1,66 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - readablegcl
+  settings:
+    custom:
+      readablegcl:
+        type: "module"
+        description: "Readable Go naming conventions and test clarity"
+        settings:
+          preset: "pragmatic"
+
+          naming_clarity:
+            enabled: true
+            single_letter_args: true
+            banned_suffixes:
+              - "Boolean"
+              - "Bool"
+              - "Str"
+              - "Int"
+            bad_initialisms:
+              Id: "ID"
+              Url: "URL"
+              Ttl: "TTL"
+              Jwt: "JWT"
+              Sid: "SID"
+            banned_words:
+              - "cfg"
+              - "mgr"
+              - "req"
+              - "res"
+              - "resp"
+              - "val"
+              - "vals"
+              - "obj"
+              - "usr"
+            banned_compounds: []
+            enforce_type_tail: false
+            type_rules:
+              "context.Context":
+                canonical_name: "ctx"
+                expected_tail: "Ctx"
+              "error":
+                canonical_name: "err"
+                expected_tail: "Err"
+            exempt_identifiers:
+              - "_"
+              - "ok"
+              - "t"
+
+          test_convention:
+            enabled: true
+            enforce_table_subtests: true
+            pattern: ""
+            require_folder_prefix: false
+            require_tier_suffix: false
+            require_matching_source_file: false
+            skipped_dirs:
+              - ".git"
+              - "vendor"
+              - "node_modules"
+              - "bin"
+              - "dist"
+              - ".cache"

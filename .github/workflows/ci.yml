@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test & Verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Set up Just
+        uses: extractions/setup-just@v4
+
+      - name: Install GolangCI-Lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          install-only: true
+
+      - name: Verify Custom Module Plugin Binary
+        run: |
+          ./custom-gcl version
+          mkdir -p $(go env GOPATH)/bin
+          ln -sf $(pwd)/custom-gcl $(go env GOPATH)/bin/golangci-lint
+
+      - name: Verify Formatting via GolangCI-Lint
+        run: just fmt-check
+
+      - name: Run Linters
+        run: just lint
+
+      - name: Run Tests with Coverage
+        run: just test
+
+      - name: Build Standalone Binary
+        run: just build
+
+      - name: Verify Example Configuration Schema
+        run: ./custom-gcl config verify -v -c .golangci.example.yml

@@ -1,0 +1,16 @@
+# Binaries & build artifacts
+custom-gcl
+bin/
+dist/
+
+# Test coverage & profiling
+*.out
+coverage.txt
+coverage.html
+
+# OS artifacts
+.DS_Store
+
+# SDD tracking
+.superpowers/
+

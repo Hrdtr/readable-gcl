@@ -1,0 +1,6 @@
+version: v2.13.2
+
+plugins:
+  - module: 'github.com/hrdtr/readable-gcl'
+    import: 'github.com/hrdtr/readable-gcl/pkg/plugin'
+    path: .
