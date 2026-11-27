@@ -153,8 +153,19 @@ linters:
                 allowed_suffixes: [Time, Start, End, At, Until, Since]
               - type: fixture.Subscription
                 allowed_names: [subscription, subscriptionAlias]
-                # Enumerate each form without adding another plural via allow_plural.
-                allowed_suffixes: [Link, Links, Box, Boxes]
+                allowed_suffixes: [Link, Box]
+                allow_plural: true
+              - type: fixture.Box
+                canonical_name: box
+                expected_tail: Box
+                allow_plural: true
+              - type: fixture.BoxDisabled
+                canonical_name: box
+                expected_tail: Box
+                allow_plural: false
+              - type: fixture.BoxDefault
+                canonical_name: box
+                expected_tail: Box
               - type: fixture.DomainResource
                 allow_any_domain_name: true
               - type: explicit.fileTransferHandler
@@ -179,7 +190,7 @@ linters:
 See [`.golangci.example.yml`](.golangci.example.yml) for a complete GolangCI-Lint configuration. The GolangCI-Lint loader (verified with v2.13.2 and v2.15.0) lowercases map keys inside plugin settings (even quoted `"time.Time"`). Set `type_rules_list` in `.golangci.yml` so the Go type is a **value** and keeps its case. The original `type_rules` map remains supported in standalone YAML or when passed to `config.Decode` with its keys intact.
 
 - Each entry replaces the **whole rule for that type**; unmentioned types keep their preset rules. List entries take priority over map entries for the same type, and the last list entry wins if a type is repeated. `type_rules_list: []` supplies no overrides and leaves preset rules in place. A rejection by a type rule never falls back to generic matching.
-- Within a rule, `allowed_names` and `canonical_name` are exact, case-sensitive alternatives. `allowed_suffixes` and `expected_tail` are literal, case-sensitive suffix alternatives. `allow_plural: true` also permits each suffix followed by `s`. To support a precise set of `s` and `es` forms, enumerate the singulars and plurals and leave `allow_plural` false so that a second `s` is not added. Empty lists add no alternatives; a rule with no names or suffixes rejects every name subject to that rule unless `allow_any_domain_name: true` is set or the existing `ErrX` sentinel convention applies to `error`.
+- Within a rule, `allowed_names` and `canonical_name` are exact, case-sensitive alternatives. `allowed_suffixes` and `expected_tail` are literal, case-sensitive suffix alternatives. Previously, `allow_plural: true` added only `s` to suffix alternatives. It now applies to both exact names and suffixes: the matcher tries the original identifier, then independently tries removing one lowercase `s` or `es` from the original. Configure only base forms. For example, `box` permits `boxs` and `boxes`, but not `cacheboxes` or `boxess`. This is literal matching, not English inflection. Omit `allow_plural` or set it to `false` to use only the configured alternatives. Empty lists add no alternatives; a rule with no names or suffixes rejects every name subject to that rule unless `allow_any_domain_name: true` is set or the existing `ErrX` sentinel convention applies to `error`.
 - With `enforce_type_tail: true`, `generic_type_matching: true` applies the opt-in policy to unlisted types. It accepts case-insensitive exact names and full type suffixes, including after removing one trailing lowercase `s`. For unexported types, shorter suffixes starting at uppercase letters also match exactly (ignoring case) or as case-sensitive suffixes, without the plural allowance. Omit `generic_type_matching` or set it to `false` for the legacy matcher. `enforce_type_tail: false` disables unlisted-type enforcement without disabling explicit type rules.
 - Slice settings such as `banned_words`, `banned_suffixes`, `banned_compounds`, `banned_word_exceptions`, `exempt_identifiers`, and `skipped_dirs` replace the preset list when present; `[]` clears it. Omit the setting to inherit the preset. An explicit `false` disables the corresponding boolean feature, even if the preset enables it; `pattern: ""` disables just the test-name pattern.
 
@@ -212,7 +223,8 @@ The integration test loads the example unchanged as `.golangci.yml` through the 
 | Generic exported names | Same settings, no per-type override | `fixture/naming.go`: `fileTransferHandler`, `downloadFileTransferHandler` → `handler`, `downloadHandler`, `cachedfiletransferhandlerss` |
 | Aliases, pointers, and unresolved types | Resolved by the analyzer | `fixture/naming.go`: `downloadTransferHandler` through an alias to a double pointer; `payload` of type `any` stays lexical → `userId` still fails lexical casing |
 | Exact rule overrides generic matching | `type_rules_list` entry for `explicit.fileTransferHandler` | [`explicit/naming.go`](pkg/namingclarity/testdata/contract/explicit/naming.go): `transfer` → `handler` |
-| Literal names, suffixes, and plurals | `allowed_names`, `allowed_suffixes`, including `Links` and `Boxes` | `fixture/naming.go`: `subscriptionAlias`, `backupLinks`, `priorityBoxes` → `SubscriptionAlias`, `prioritybox`, `backupLinkss`, `priorityBoxess` |
+| Literal names, suffixes, and plurals | `allowed_names`, `allowed_suffixes`, and `allow_plural: true` with base forms only | `fixture/naming.go`: `subscriptionAlias`, `subscriptionAliases`, `backupLinks`, `priorityBoxes` → `SubscriptionAlias`, `prioritybox`, `backupLinkss`, `priorityBoxess` |
+| Native `s` and `es` endings | `canonical_name: box`, `expected_tail: Box`, `allow_plural: true` | [`fixture/plural.go`](pkg/namingclarity/testdata/contract/fixture/plural.go): `box`, `cacheBox`, `boxs`, `cacheBoxs`, `boxes`, `cacheBoxes` → `cachebox`, `cacheboxes`, `boxess`, `cacheBoxess`; false and omitted also reject `boxes` and `cacheBoxes` |
 | Any domain name | `allow_any_domain_name: true` | `fixture/naming.go`: `inventory` → `inventoryCfg` still fails the word rule |
 | Mixed-case type key | `type_rules_list` with `type: time.Time` | `fixture/naming.go`: `now`, `createdAt`, `lockedUntil` → `banana`, `createdAtValue`, and `now` on an unrelated type |
 | Representation suffixes | `banned_suffixes`, `banned_suffix_exceptions` | `fixture/naming.go`: `totalBigInt` on `big.Int` → `countInt` and `totalBigInt` on `int` |

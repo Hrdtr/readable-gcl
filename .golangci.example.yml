@@ -47,8 +47,19 @@ linters:
                 allowed_suffixes: [Time, Start, End, At, Until, Since]
               - type: fixture.Subscription
                 allowed_names: [subscription, subscriptionAlias]
-                # Enumerate each form without adding another plural via allow_plural.
-                allowed_suffixes: [Link, Links, Box, Boxes]
+                allowed_suffixes: [Link, Box]
+                allow_plural: true
+              - type: fixture.Box
+                canonical_name: box
+                expected_tail: Box
+                allow_plural: true
+              - type: fixture.BoxDisabled
+                canonical_name: box
+                expected_tail: Box
+                allow_plural: false
+              - type: fixture.BoxDefault
+                canonical_name: box
+                expected_tail: Box
               - type: fixture.DomainResource
                 allow_any_domain_name: true
               - type: explicit.fileTransferHandler

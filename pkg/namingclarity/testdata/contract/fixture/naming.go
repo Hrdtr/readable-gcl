@@ -51,19 +51,23 @@ type Subscription struct{}
 type DomainResource struct{}
 
 var (
-	subscription        Subscription
-	subscriptionAlias   Subscription
-	primaryLink         Subscription
-	backupLinks         Subscription
-	priorityBox         Subscription
-	priorityBoxes       Subscription
-	priorityBoxess      Subscription // want: namingclarity: "priorityBoxess" should be
-	backupLinkss        Subscription // want: namingclarity: "backupLinkss" should be
-	prioritybox         Subscription // want: namingclarity: "prioritybox" should be
-	SubscriptionAlias   Subscription // want: namingclarity: "SubscriptionAlias" should be
-	renewalSubscription Subscription // want: namingclarity: "renewalSubscription" should be
-	inventory           DomainResource
-	inventoryCfg        DomainResource // want: namingclarity: disallowed identifier term "cfg"
+	subscription                 Subscription
+	subscriptionAlias            Subscription
+	subscriptions                Subscription
+	subscriptionAliases          Subscription
+	primaryLink                  Subscription
+	backupLinks                  Subscription
+	priorityBox                  Subscription
+	priorityBoxes                Subscription
+	priorityBoxess               Subscription // want: namingclarity: "priorityBoxess" should be
+	backupLinkss                 Subscription // want: namingclarity: "backupLinkss" should be
+	prioritybox                  Subscription // want: namingclarity: "prioritybox" should be
+	SubscriptionAlias            Subscription // want: namingclarity: "SubscriptionAlias" should be
+	inventorySubscriptionAliases Subscription // want: namingclarity: "inventorySubscriptionAliases" should be
+	subscriptionAliasesS         Subscription // want: namingclarity: "subscriptionAliasesS" should be
+	renewalSubscription          Subscription // want: namingclarity: "renewalSubscription" should be
+	inventory                    DomainResource
+	inventoryCfg                 DomainResource // want: namingclarity: disallowed identifier term "cfg"
 )
 
 var (

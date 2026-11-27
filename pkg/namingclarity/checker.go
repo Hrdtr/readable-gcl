@@ -516,34 +516,37 @@ func configuredTypeRule(concreteTypeName string, configuration config.NamingClar
 	return findSpecialTypeRule(concreteTypeName, configuration.TypeRules)
 }
 
-// An empty mismatch means the name is accepted. Each alternative is matched and
-// described in the same branch so diagnostics cannot drift from the rule.
+// An empty mismatch means the name is accepted.
 func typeRuleMismatch(name, concreteTypeName string, rule config.TypeRule) string {
 	if rule.AllowAnyDomainName {
 		return ""
 	}
 
-	var alternatives []string
-	for _, allowedName := range slices.Concat([]string{rule.CanonicalName}, rule.AllowedNames) {
-		if allowedName != "" {
-			if name == allowedName {
-				return ""
-			}
-			alternatives = append(alternatives, fmt.Sprintf("named %q", allowedName))
-		}
+	names := slices.Concat([]string{rule.CanonicalName}, rule.AllowedNames)
+	suffixes := slices.Concat([]string{rule.ExpectedTail}, rule.AllowedSuffixes)
+	var pluralEndings []string
+	if rule.AllowPlural {
+		pluralEndings = []string{"s", "es"}
 	}
-	for _, suffix := range slices.Concat([]string{rule.ExpectedTail}, rule.AllowedSuffixes) {
-		if suffix == "" {
-			continue
-		}
-		if strings.HasSuffix(name, suffix) || (rule.AllowPlural && strings.HasSuffix(name, suffix+"s")) {
+	if matchesTypeAlternatives(name, names, suffixes) {
+		return ""
+	}
+	for _, ending := range pluralEndings {
+		if base, stripped := strings.CutSuffix(name, ending); stripped && matchesTypeAlternatives(base, names, suffixes) {
 			return ""
 		}
-		description := fmt.Sprintf("suffixed with %q", suffix)
-		if rule.AllowPlural {
-			description += fmt.Sprintf(" or %q", suffix+"s")
+	}
+
+	var alternatives []string
+	for _, allowedName := range names {
+		if allowedName != "" {
+			alternatives = append(alternatives, describeTypeAlternative("named", allowedName, pluralEndings))
 		}
-		alternatives = append(alternatives, description)
+	}
+	for _, suffix := range suffixes {
+		if suffix != "" {
+			alternatives = append(alternatives, describeTypeAlternative("suffixed with", suffix, pluralEndings))
+		}
 	}
 	if concreteTypeName == "error" {
 		if IsSentinelError(name) {
@@ -562,6 +565,26 @@ func typeRuleMismatch(name, concreteTypeName string, rule config.TypeRule) strin
 	default:
 		return fmt.Sprintf("%q should be %s, or %s", name, strings.Join(alternatives[:len(alternatives)-1], ", "), alternatives[len(alternatives)-1])
 	}
+}
+
+func matchesTypeAlternatives(name string, names, suffixes []string) bool {
+	if name == "" {
+		return false
+	}
+	if slices.Contains(names, name) {
+		return true
+	}
+	return slices.ContainsFunc(suffixes, func(suffix string) bool {
+		return suffix != "" && strings.HasSuffix(name, suffix)
+	})
+}
+
+func describeTypeAlternative(label, base string, endings []string) string {
+	description := fmt.Sprintf("%s %q", label, base)
+	for _, ending := range endings {
+		description += fmt.Sprintf(" or %q", base+ending)
+	}
+	return description
 }
 
 func findSpecialTypeRule(concreteTypeName string, typeRules map[string]config.TypeRule) (config.TypeRule, bool) {

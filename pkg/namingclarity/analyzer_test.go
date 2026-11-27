@@ -63,9 +63,10 @@ var poolWrapper sync.Pool // want "poolWrapper.*should be named"
 var timeValue time.Time // want "is not allowed by the naming rule for time.Time"
 var widget Widget
 var wrongWidget Widget // want "wrongWidget.*should be named .widget."
-var peers net.Conn // want "suffixed with .Connection. or .Connections."
-var connections net.Conn // want "suffixed with .Connection. or .Connections."
+var peers net.Conn // want "named .connection. or .connections. or .connectiones. or suffixed with .Connection. or .Connections. or .Connectiones."
+var connections net.Conn
 var clientConnections net.Conn
+var es net.Conn // want "should be named"
 `})
 	if err != nil {
 		t.Fatal(err)
