@@ -10,57 +10,31 @@ linters:
         type: "module"
         description: "Readable Go naming conventions and test clarity"
         settings:
-          preset: "pragmatic"
+          preset: strict
 
           naming_clarity:
-            enabled: true
-            single_letter_args: true
-            banned_suffixes:
-              - "Boolean"
-              - "Bool"
-              - "Str"
-              - "Int"
-            bad_initialisms:
-              Id: "ID"
-              Url: "URL"
-              Ttl: "TTL"
-              Jwt: "JWT"
-              Sid: "SID"
-            banned_words:
-              - "cfg"
-              - "mgr"
-              - "req"
-              - "res"
-              - "resp"
-              - "val"
-              - "vals"
-              - "obj"
-              - "usr"
-            banned_compounds: []
-            enforce_type_tail: false
-            type_rules:
-              "context.Context":
-                canonical_name: "ctx"
-                expected_tail: "Ctx"
-              "error":
-                canonical_name: "err"
-                expected_tail: "Err"
-            exempt_identifiers:
-              - "_"
-              - "ok"
-              - "t"
+            single_letter_params: true
+            single_letter_receivers: false
+            check_receiver_types: false
+            # Lists replace the preset's list; include defaults you want to keep.
+            banned_words: [cfg, mgr, req, res, resp, val, vals, obj, usr, pool]
+            banned_word_exceptions:
+              - word: pool
+                types: [sync.Pool]
+              - word: pool
+                previous: cert
+              - word: pool
+                previous: database
+                next: options
+            type_rules_list:
+              - type: time.Time
+                allowed_names: [time, now, start, end]
+                allowed_suffixes: [Time, Start, End, At, Until, Since]
 
           test_convention:
-            enabled: true
+            pattern: '^Test[A-Z][a-zA-Z0-9]+$'
+            require_folder_prefix: true
+            require_tier_suffix: true
             enforce_table_subtests: true
-            pattern: ""
-            require_folder_prefix: false
-            require_tier_suffix: false
-            require_matching_source_file: false
-            skipped_dirs:
-              - ".git"
-              - "vendor"
-              - "node_modules"
-              - "bin"
-              - "dist"
-              - ".cache"
+            require_matching_source_file: true
+            skipped_dirs: [.git, vendor, node_modules, bin, dist, .cache, ignored]

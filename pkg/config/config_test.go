@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/hrdtr/readable-gcl/pkg/config"
+	"gopkg.in/yaml.v3"
 )
 
 func TestDefaultConfigPragmatic(t *testing.T) {
@@ -115,6 +116,59 @@ naming_clarity:
 	}
 	if len(configuration.NamingClarity.BannedSuffixes) != 1 || configuration.NamingClarity.BannedSuffixes[0] != "Int" {
 		t.Errorf("expected [Int], got %v", configuration.NamingClarity.BannedSuffixes)
+	}
+}
+
+func TestExplicitListsOverrideDefaults(t *testing.T) {
+	const input = `
+preset: strict
+naming_clarity:
+  banned_words: []
+  banned_suffixes: [Str]
+  type_rules:
+    time.Time:
+      allowed_names: [now]
+  type_rules_list:
+    - type: net.Conn
+      allowed_names: []
+      allowed_suffixes: [Link]
+test_convention:
+  skipped_dirs: []
+`
+	for name, decode := range map[string]func() (*config.Config, error){
+		"yaml": func() (*config.Config, error) { return config.DecodeYAML([]byte(input)) },
+		"host-settings": func() (*config.Config, error) {
+			var settings map[string]any
+			if err := yaml.Unmarshal([]byte(input), &settings); err != nil {
+				return nil, err
+			}
+			return config.Decode(settings)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			configuration, err := decode()
+			if err != nil {
+				t.Fatal(err)
+			}
+			naming := configuration.NamingClarity
+			if len(naming.BannedWords) != 0 || len(configuration.TestConvention.SkippedDirectories) != 0 {
+				t.Fatal("explicit empty lists must clear preset lists")
+			}
+			if len(naming.BannedSuffixes) != 1 || naming.BannedSuffixes[0] != "Str" || len(naming.ExemptIdentifiers) != 3 {
+				t.Fatal("explicit lists must replace, omitted lists must inherit")
+			}
+			timeRule := naming.TypeRules["time.Time"]
+			if timeRule.CanonicalName != "" || timeRule.ExpectedTail != "" || len(timeRule.AllowedNames) != 1 || timeRule.AllowedNames[0] != "now" {
+				t.Errorf("map entry must replace the preset rule: %+v", timeRule)
+			}
+			entries := naming.TypeRulesList
+			if len(entries) != 1 || entries[0].Type != "net.Conn" || len(entries[0].AllowedNames) != 0 || len(entries[0].AllowedSuffixes) != 1 || entries[0].AllowedSuffixes[0] != "Link" {
+				t.Errorf("list entry must preserve the exact type and explicit alternatives: %+v", entries)
+			}
+			if naming.TypeRules["error"].CanonicalName != "err" {
+				t.Error("unmentioned rule must inherit")
+			}
+		})
 	}
 }
 

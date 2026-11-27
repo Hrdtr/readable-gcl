@@ -9,23 +9,44 @@ import (
 
 // TypeRule specifies canonical variable naming rules for a specific Go type.
 type TypeRule struct {
-	CanonicalName      string `json:"canonical_name" yaml:"canonical_name"`
-	ExpectedTail       string `json:"expected_tail" yaml:"expected_tail"`
-	AllowPlural        bool   `json:"allow_plural" yaml:"allow_plural"`
-	AllowAnyDomainName bool   `json:"allow_any_domain_name" yaml:"allow_any_domain_name"`
+	CanonicalName      string   `json:"canonical_name" yaml:"canonical_name"`
+	ExpectedTail       string   `json:"expected_tail" yaml:"expected_tail"`
+	AllowPlural        bool     `json:"allow_plural" yaml:"allow_plural"`
+	AllowAnyDomainName bool     `json:"allow_any_domain_name" yaml:"allow_any_domain_name"`
+	AllowedNames       []string `json:"allowed_names" yaml:"allowed_names"`
+	AllowedSuffixes    []string `json:"allowed_suffixes" yaml:"allowed_suffixes"`
+}
+
+// TypeRuleEntry carries the type as a value for hosts that normalize map keys.
+type TypeRuleEntry struct {
+	Type     string `json:"type" yaml:"type"`
+	TypeRule `yaml:",inline"`
+}
+
+// BannedWordException exempts one component word when all supplied conditions match.
+type BannedWordException struct {
+	Word     string   `json:"word" yaml:"word"`
+	Types    []string `json:"types" yaml:"types"`
+	Previous string   `json:"previous" yaml:"previous"`
+	Next     string   `json:"next" yaml:"next"`
 }
 
 // NamingClarityConfig defines settings for the namingclarity analyzer.
 type NamingClarityConfig struct {
-	Enabled           bool                `json:"enabled" yaml:"enabled"`
-	SingleLetterArgs  bool                `json:"single_letter_args" yaml:"single_letter_args"`
-	BannedSuffixes    []string            `json:"banned_suffixes" yaml:"banned_suffixes"`
-	BadInitialisms    map[string]string   `json:"bad_initialisms" yaml:"bad_initialisms"`
-	BannedWords       []string            `json:"banned_words" yaml:"banned_words"`
-	BannedCompounds   []string            `json:"banned_compounds" yaml:"banned_compounds"`
-	EnforceTypeTail   bool                `json:"enforce_type_tail" yaml:"enforce_type_tail"`
-	TypeRules         map[string]TypeRule `json:"type_rules" yaml:"type_rules"`
-	ExemptIdentifiers []string            `json:"exempt_identifiers" yaml:"exempt_identifiers"`
+	Enabled               bool                  `json:"enabled" yaml:"enabled"`
+	SingleLetterArgs      bool                  `json:"single_letter_args" yaml:"single_letter_args"`
+	SingleLetterParams    *bool                 `json:"single_letter_params" yaml:"single_letter_params"`
+	SingleLetterReceivers *bool                 `json:"single_letter_receivers" yaml:"single_letter_receivers"`
+	CheckReceiverTypes    *bool                 `json:"check_receiver_types" yaml:"check_receiver_types"`
+	BannedWordExceptions  []BannedWordException `json:"banned_word_exceptions" yaml:"banned_word_exceptions"`
+	TypeRulesList         []TypeRuleEntry       `json:"type_rules_list" yaml:"type_rules_list"`
+	BannedSuffixes        []string              `json:"banned_suffixes" yaml:"banned_suffixes"`
+	BadInitialisms        map[string]string     `json:"bad_initialisms" yaml:"bad_initialisms"`
+	BannedWords           []string              `json:"banned_words" yaml:"banned_words"`
+	BannedCompounds       []string              `json:"banned_compounds" yaml:"banned_compounds"`
+	EnforceTypeTail       bool                  `json:"enforce_type_tail" yaml:"enforce_type_tail"`
+	TypeRules             map[string]TypeRule   `json:"type_rules" yaml:"type_rules"`
+	ExemptIdentifiers     []string              `json:"exempt_identifiers" yaml:"exempt_identifiers"`
 }
 
 // TestConventionConfig defines settings for the testconvention analyzer.

@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"strings"
 	"testing"
 
 	"github.com/hrdtr/readable-gcl/pkg/config"
@@ -131,16 +132,61 @@ func TestShouldReportUnclearName(t *testing.T) {
 	})
 }
 
+func TestTypeRuleAlternatives(t *testing.T) {
+	configuration := config.DefaultConfig("strict").NamingClarity
+	configuration.TypeRulesList = []config.TypeRuleEntry{{
+		Type: "time.Time",
+		TypeRule: config.TypeRule{
+			CanonicalName:   "time",
+			ExpectedTail:    "Time",
+			AllowedNames:    []string{"now", "start"},
+			AllowedSuffixes: []string{"At", "Until"},
+		},
+	}}
+	for _, name := range []string{"time", "now", "start", "createdTime", "createdAt", "lockedUntil"} {
+		t.Run("accept/"+name, func(t *testing.T) {
+			if message, report := shouldReportUnclearName(name, "time.Time", configuration); report {
+				t.Errorf("expected %s to be accepted, got %s", name, message)
+			}
+		})
+	}
+	for _, name := range []string{"banana", "createdAtValue", "createdat", "Now", "nows"} {
+		t.Run("reject/"+name, func(t *testing.T) {
+			message, report := shouldReportUnclearName(name, "time.Time", configuration)
+			if !report {
+				t.Fatalf("expected to reject %s", name)
+			}
+			for _, alternative := range []string{`named "time"`, `named "now"`, `named "start"`, `suffixed with "Time"`, `suffixed with "At"`, `suffixed with "Until"`} {
+				if !strings.Contains(message, alternative) {
+					t.Errorf("diagnostic %q omitted alternative %s", message, alternative)
+				}
+			}
+		})
+	}
+
+	configuration.TypeRulesList = []config.TypeRuleEntry{{
+		Type:     "error",
+		TypeRule: config.TypeRule{AllowedNames: []string{"failure"}},
+	}}
+	if message, report := shouldReportUnclearName("ErrNotFound", "error", configuration); report {
+		t.Errorf("sentinel convention must remain in effect: %s", message)
+	}
+	message, report := shouldReportUnclearName("Errata", "error", configuration)
+	if !report || !strings.Contains(message, `named "failure"`) || !strings.Contains(message, `"Err" followed by an uppercase letter`) || strings.Contains(message, `named "err"`) {
+		t.Errorf("unexpected custom error rule diagnostic: %q", message)
+	}
+}
+
 func TestIsExemptIdentifier(t *testing.T) {
 	defaultConfiguration := config.DefaultConfig("pragmatic").NamingClarity
 
-	if !isExemptIdentifier(nil, &ast.Ident{Name: "_"}, "", defaultConfiguration) {
+	if !isExemptIdentifier(nil, &ast.Ident{Name: "_"}, defaultConfiguration) {
 		t.Error("expected _ to be exempt")
 	}
-	if !isExemptIdentifier(nil, &ast.Ident{Name: "ok"}, "", defaultConfiguration) {
+	if !isExemptIdentifier(nil, &ast.Ident{Name: "ok"}, defaultConfiguration) {
 		t.Error("expected ok to be exempt")
 	}
-	if isExemptIdentifier(nil, &ast.Ident{Name: "foo"}, "", defaultConfiguration) {
+	if isExemptIdentifier(nil, &ast.Ident{Name: "foo"}, defaultConfiguration) {
 		t.Error("expected foo to not be exempt")
 	}
 }
@@ -158,7 +204,7 @@ func TestNilFieldHandlers(t *testing.T) {
 	checkStructFields(nil, nil, defaultConfiguration)
 
 	// checkFields with nil
-	checkFields(nil, nil, defaultConfiguration)
+	checkFields(nil, nil, defaultConfiguration, true)
 }
 
 func TestFindSpecialTypeRule(t *testing.T) {
@@ -306,14 +352,12 @@ func TestIsExemptIdentifierAdditionalBranches(t *testing.T) {
 		Name:    "t",
 		NamePos: tokenFile.Pos(10),
 	}
-	if !isExemptIdentifier(pass, identT, "", configurationWithoutT) {
+	if !isExemptIdentifier(pass, identT, configurationWithoutT) {
 		t.Error("expected t to be exempt in test file")
 	}
 
-	// 2. Plural rule in isExemptIdentifier
-	identPlural := &ast.Ident{Name: "customElements"}
-	if !isExemptIdentifier(pass, identPlural, "custom.Element", configurationWithoutT) {
-		t.Error("expected plural customElements to be exempt")
+	if message, report := shouldReportUnclearName("customElements", "custom.Element", configurationWithoutT); report {
+		t.Errorf("expected plural customElements to be accepted, got %q", message)
 	}
 }
 

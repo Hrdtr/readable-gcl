@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/types"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -18,7 +19,7 @@ func run(pass *analysis.Pass, configuration config.NamingClarityConfig) (any, er
 			case *ast.FuncDecl:
 				if targetNode.Recv != nil {
 					checkReceivers(pass, targetNode.Recv, configuration)
-					checkFields(pass, targetNode.Recv.List, configuration)
+					checkFields(pass, targetNode.Recv.List, configuration, enabledOr(configuration.CheckReceiverTypes, true))
 				}
 
 			case *ast.AssignStmt:
@@ -38,10 +39,10 @@ func run(pass *analysis.Pass, configuration config.NamingClarityConfig) (any, er
 			case *ast.FuncType:
 				if targetNode.Params != nil {
 					checkFuncParams(pass, targetNode.Params, configuration)
-					checkFields(pass, targetNode.Params.List, configuration)
+					checkFields(pass, targetNode.Params.List, configuration, true)
 				}
 				if targetNode.Results != nil {
-					checkFields(pass, targetNode.Results.List, configuration)
+					checkFields(pass, targetNode.Results.List, configuration, true)
 				}
 			}
 
@@ -53,7 +54,7 @@ func run(pass *analysis.Pass, configuration config.NamingClarityConfig) (any, er
 }
 
 func checkFuncParams(pass *analysis.Pass, parameters *ast.FieldList, configuration config.NamingClarityConfig) {
-	if parameters == nil || !configuration.SingleLetterArgs {
+	if parameters == nil || !enabledOr(configuration.SingleLetterParams, configuration.SingleLetterArgs) {
 		return
 	}
 
@@ -82,33 +83,28 @@ func checkFuncParams(pass *analysis.Pass, parameters *ast.FieldList, configurati
 	}
 }
 
+func enabledOr(setting *bool, fallback bool) bool {
+	if setting == nil {
+		return fallback
+	}
+	return *setting
+}
+
 func checkReceivers(pass *analysis.Pass, receivers *ast.FieldList, configuration config.NamingClarityConfig) {
-	if receivers == nil || !configuration.SingleLetterArgs {
+	if receivers == nil || !enabledOr(configuration.SingleLetterReceivers, configuration.SingleLetterArgs) {
 		return
 	}
 
 	for _, receiverField := range receivers.List {
-		var concreteTypeName string
-		if receiverField.Type != nil {
-			concreteTypeName, _ = resolveConcreteTypeName(pass.TypesInfo.TypeOf(receiverField.Type))
-		}
-
 		for _, identifier := range receiverField.Names {
 			if len(identifier.Name) == 1 && identifier.Name != "_" {
-				pass.Reportf(
-					identifier.Pos(),
-					"single-letter receiver prohibited: %s",
-					identifier.Name,
-				)
-				continue
+				pass.Reportf(identifier.Pos(), "single-letter receiver prohibited: %s", identifier.Name)
 			}
-
-			inspectIdentifier(pass, identifier, concreteTypeName, configuration)
 		}
 	}
 }
 
-func checkFields(pass *analysis.Pass, fieldList []*ast.Field, configuration config.NamingClarityConfig) {
+func checkFields(pass *analysis.Pass, fieldList []*ast.Field, configuration config.NamingClarityConfig, checkTypes bool) {
 	for _, currentField := range fieldList {
 		if len(currentField.Names) == 0 {
 			continue
@@ -117,13 +113,13 @@ func checkFields(pass *analysis.Pass, fieldList []*ast.Field, configuration conf
 		var concreteTypeName string
 		var hasConcreteTypeName bool
 
-		if currentField.Type != nil {
+		if checkTypes && currentField.Type != nil {
 			concreteTypeName, hasConcreteTypeName = resolveConcreteTypeName(pass.TypesInfo.TypeOf(currentField.Type))
 		}
 
 		for _, identifier := range currentField.Names {
 			identConcreteName := concreteTypeName
-			if !hasConcreteTypeName {
+			if checkTypes && !hasConcreteTypeName {
 				identConcreteName, _ = resolveConcreteTypeNameFromIdent(pass, identifier)
 			}
 
@@ -299,7 +295,7 @@ func checkDisallowedIdentifier(pass *analysis.Pass, identifier *ast.Ident, confi
 	}
 
 	// Check disallowed component words
-	if flaggedWord, hasDisallowedWord := CheckDisallowedWord(componentWords, configuration.BannedWords); hasDisallowedWord {
+	if flaggedWord, hasDisallowedWord := checkBannedWord(pass, identifier, componentWords, configuration); hasDisallowedWord {
 		pass.Reportf(
 			identifier.Pos(),
 			"disallowed identifier term %q prohibited: %s",
@@ -326,8 +322,52 @@ func checkDisallowedIdentifier(pass *analysis.Pass, identifier *ast.Ident, confi
 	return false
 }
 
+func checkBannedWord(pass *analysis.Pass, identifier *ast.Ident, words []string, configuration config.NamingClarityConfig) (string, bool) {
+	if len(configuration.BannedWordExceptions) == 0 {
+		return CheckDisallowedWord(words, configuration.BannedWords)
+	}
+
+	typeName := ""
+	if pass.TypesInfo != nil {
+		typeName, _ = resolveConcreteTypeNameFromIdent(pass, identifier)
+		if typeName == "" {
+			if basic, ok := types.Unalias(pass.TypesInfo.TypeOf(identifier)).(*types.Basic); ok {
+				typeName = basic.Name()
+			}
+		}
+	}
+
+	for index, word := range words {
+		if !slices.ContainsFunc(configuration.BannedWords, func(banned string) bool { return strings.EqualFold(word, banned) }) {
+			continue
+		}
+		if !slices.ContainsFunc(configuration.BannedWordExceptions, func(exception config.BannedWordException) bool {
+			return matchesWordException(exception, words, index, typeName)
+		}) {
+			return strings.ToLower(word), true
+		}
+	}
+	return "", false
+}
+
+func matchesWordException(exception config.BannedWordException, words []string, index int, typeName string) bool {
+	if !strings.EqualFold(exception.Word, words[index]) {
+		return false
+	}
+	if len(exception.Types) > 0 && (typeName == "" || !slices.Contains(exception.Types, typeName)) {
+		return false
+	}
+	if exception.Previous != "" && (index == 0 || !strings.EqualFold(exception.Previous, words[index-1])) {
+		return false
+	}
+	if exception.Next != "" && (index+1 == len(words) || !strings.EqualFold(exception.Next, words[index+1])) {
+		return false
+	}
+	return len(exception.Types) > 0 || exception.Previous != "" || exception.Next != ""
+}
+
 func checkIdentifier(pass *analysis.Pass, identifier *ast.Ident, concreteTypeName string, configuration config.NamingClarityConfig) bool {
-	if isExemptIdentifier(pass, identifier, concreteTypeName, configuration) {
+	if isExemptIdentifier(pass, identifier, configuration) {
 		return false
 	}
 
@@ -340,7 +380,7 @@ func checkIdentifier(pass *analysis.Pass, identifier *ast.Ident, concreteTypeNam
 	return true
 }
 
-func isExemptIdentifier(pass *analysis.Pass, identifier *ast.Ident, concreteTypeName string, configuration config.NamingClarityConfig) bool {
+func isExemptIdentifier(pass *analysis.Pass, identifier *ast.Ident, configuration config.NamingClarityConfig) bool {
 	identifierName := identifier.Name
 	for _, exempt := range configuration.ExemptIdentifiers {
 		if identifierName == exempt {
@@ -348,31 +388,7 @@ func isExemptIdentifier(pass *analysis.Pass, identifier *ast.Ident, concreteType
 		}
 	}
 
-	if isTestingT(pass, identifier) {
-		return true
-	}
-
-	if rule, exists := findSpecialTypeRule(concreteTypeName, configuration.TypeRules); exists {
-		if rule.AllowAnyDomainName {
-			return true
-		}
-		if rule.CanonicalName != "" && identifierName == rule.CanonicalName {
-			return true
-		}
-		if rule.ExpectedTail != "" && strings.HasSuffix(identifierName, rule.ExpectedTail) {
-			return true
-		}
-		if rule.AllowPlural {
-			if strings.HasSuffix(identifierName, "s") && strings.HasSuffix(strings.TrimSuffix(identifierName, "s"), rule.ExpectedTail) {
-				return true
-			}
-		}
-		if concreteTypeName == "error" && IsSentinelError(identifierName) {
-			return true
-		}
-	}
-
-	return false
+	return isTestingT(pass, identifier)
 }
 
 func shouldReportUnclearName(identifierName string, concreteTypeName string, configuration config.NamingClarityConfig) (string, bool) {
@@ -381,28 +397,9 @@ func shouldReportUnclearName(identifierName string, concreteTypeName string, con
 	}
 
 	// Consult configured special type rules
-	if rule, exists := findSpecialTypeRule(concreteTypeName, configuration.TypeRules); exists {
-		if rule.AllowAnyDomainName {
-			return "", false
-		}
-		if rule.CanonicalName != "" && identifierName == rule.CanonicalName {
-			return "", false
-		}
-		if rule.ExpectedTail != "" && strings.HasSuffix(identifierName, rule.ExpectedTail) {
-			return "", false
-		}
-		if rule.AllowPlural {
-			if strings.HasSuffix(identifierName, "s") && strings.HasSuffix(strings.TrimSuffix(identifierName, "s"), rule.ExpectedTail) {
-				return "", false
-			}
-		}
-		if concreteTypeName == "error" {
-			if IsSentinelError(identifierName) {
-				return "", false
-			}
-			return fmt.Sprintf("%q should be named %q, suffixed with %q, or prefixed with %q", identifierName, "err", "Err", "Err"), true
-		}
-		return fmt.Sprintf("%q should be named %q or suffixed with %q", identifierName, rule.CanonicalName, rule.ExpectedTail), true
+	if rule, exists := configuredTypeRule(concreteTypeName, configuration); exists {
+		message := typeRuleMismatch(identifierName, concreteTypeName, rule)
+		return message, message != ""
 	}
 
 	if !configuration.EnforceTypeTail {
@@ -424,6 +421,64 @@ func shouldReportUnclearName(identifierName string, concreteTypeName string, con
 	}
 
 	return fmt.Sprintf("%q should be named %q or suffixed with %q", identifierName, canonicalName, expectedTail), true
+}
+
+func configuredTypeRule(concreteTypeName string, configuration config.NamingClarityConfig) (config.TypeRule, bool) {
+	for index := len(configuration.TypeRulesList) - 1; index >= 0; index-- {
+		entry := configuration.TypeRulesList[index]
+		if entry.Type == concreteTypeName {
+			return entry.TypeRule, true
+		}
+	}
+	return findSpecialTypeRule(concreteTypeName, configuration.TypeRules)
+}
+
+// An empty mismatch means the name is accepted. Each alternative is matched and
+// described in the same branch so diagnostics cannot drift from the rule.
+func typeRuleMismatch(name, concreteTypeName string, rule config.TypeRule) string {
+	if rule.AllowAnyDomainName {
+		return ""
+	}
+
+	var alternatives []string
+	for _, allowedName := range slices.Concat([]string{rule.CanonicalName}, rule.AllowedNames) {
+		if allowedName != "" {
+			if name == allowedName {
+				return ""
+			}
+			alternatives = append(alternatives, fmt.Sprintf("named %q", allowedName))
+		}
+	}
+	for _, suffix := range slices.Concat([]string{rule.ExpectedTail}, rule.AllowedSuffixes) {
+		if suffix == "" {
+			continue
+		}
+		if strings.HasSuffix(name, suffix) || (rule.AllowPlural && strings.HasSuffix(name, suffix+"s")) {
+			return ""
+		}
+		description := fmt.Sprintf("suffixed with %q", suffix)
+		if rule.AllowPlural {
+			description += fmt.Sprintf(" or %q", suffix+"s")
+		}
+		alternatives = append(alternatives, description)
+	}
+	if concreteTypeName == "error" {
+		if IsSentinelError(name) {
+			return ""
+		}
+		alternatives = append(alternatives, `prefixed with "Err" followed by an uppercase letter`)
+	}
+
+	switch len(alternatives) {
+	case 0:
+		return fmt.Sprintf("%q is not allowed by the naming rule for %s", name, concreteTypeName)
+	case 1:
+		return fmt.Sprintf("%q should be %s", name, alternatives[0])
+	case 2:
+		return fmt.Sprintf("%q should be %s or %s", name, alternatives[0], alternatives[1])
+	default:
+		return fmt.Sprintf("%q should be %s, or %s", name, strings.Join(alternatives[:len(alternatives)-1], ", "), alternatives[len(alternatives)-1])
+	}
 }
 
 func findSpecialTypeRule(concreteTypeName string, typeRules map[string]config.TypeRule) (config.TypeRule, bool) {

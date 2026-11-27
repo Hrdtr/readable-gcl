@@ -116,63 +116,62 @@ linters:
         type: "module"
         description: "Readable Go naming conventions and test clarity"
         settings:
-          preset: "pragmatic" # "pragmatic" (default) or "strict"
+          preset: strict
 
           naming_clarity:
-            enabled: true
-            single_letter_args: true
-            banned_suffixes:
-              - "Boolean"
-              - "Bool"
-              - "Str"
-              - "Int"
-            bad_initialisms:
-              Id: "ID"
-              Url: "URL"
-              Ttl: "TTL"
-              Jwt: "JWT"
-              Sid: "SID"
-            banned_words:
-              - "cfg"
-              - "mgr"
-              - "req"
-              - "res"
-              - "resp"
-              - "val"
-              - "vals"
-              - "obj"
-              - "usr"
-            banned_compounds: []
-            enforce_type_tail: false
-            type_rules:
-              "context.Context":
-                canonical_name: "ctx"
-                expected_tail: "Ctx"
-              "error":
-                canonical_name: "err"
-                expected_tail: "Err"
-            exempt_identifiers:
-              - "_"
-              - "ok"
-              - "t"
+            single_letter_params: true
+            single_letter_receivers: false
+            check_receiver_types: false
+            # Lists replace the preset's list; include defaults you want to keep.
+            banned_words: [cfg, mgr, req, res, resp, val, vals, obj, usr, pool]
+            banned_word_exceptions:
+              - word: pool
+                types: [sync.Pool]
+              - word: pool
+                previous: cert
+              - word: pool
+                previous: database
+                next: options
+            type_rules_list:
+              - type: time.Time
+                allowed_names: [time, now, start, end]
+                allowed_suffixes: [Time, Start, End, At, Until, Since]
 
           test_convention:
-            enabled: true
+            pattern: '^Test[A-Z][a-zA-Z0-9]+$'
+            require_folder_prefix: true
+            require_tier_suffix: true
             enforce_table_subtests: true
-            pattern: ""
-            require_folder_prefix: false
-            require_tier_suffix: false
-            require_matching_source_file: false # requires file_name_test.go to match file_name.go or directory name
-            skipped_dirs:
-              - ".git"
-              - "vendor"
-              - "node_modules"
-              - "bin"
-              - "dist"
-              - ".cache"
+            require_matching_source_file: true
+            skipped_dirs: [.git, vendor, node_modules, bin, dist, .cache, ignored]
 ```
 
 ---
+
+### Type rules and overrides
+
+See [`.golangci.example.yml`](.golangci.example.yml) for a complete GolangCI-Lint configuration. The GolangCI-Lint loader (verified with v2.13.2 and v2.15.0) lowercases map keys inside plugin settings (even quoted `"time.Time"`). Set `type_rules_list` in `.golangci.yml` so the Go type is a **value** and keeps its case. The original `type_rules` map remains supported in standalone YAML or when passed to `config.Decode` with its keys intact.
+
+- Each entry replaces the **whole rule for that type**; unmentioned types keep their preset rules. List entries take priority over map entries for the same type, and the last list entry wins if a type is repeated. `type_rules_list: []` supplies no overrides and leaves preset rules in place.
+- Within a rule, `allowed_names` and `canonical_name` are exact, case-sensitive alternatives. `allowed_suffixes` and `expected_tail` are literal, case-sensitive suffix alternatives. `allow_plural: true` also permits each suffix followed by `s`. Empty lists add no alternatives; a rule with no names or suffixes rejects every name subject to that rule unless `allow_any_domain_name: true` is set or the existing `ErrX` sentinel convention applies to `error`.
+- Other slice settings (such as `banned_words`, `banned_suffixes`, `banned_compounds`, `banned_word_exceptions`, `exempt_identifiers`, and `skipped_dirs`) replace the preset list when present; `[]` clears it. Omit the setting to inherit the preset.
+
+### Banned-word exceptions and receiver scope
+
+`banned_word_exceptions` entries use `word` plus at least one condition: `types` (exact resolved type names such as `sync.Pool`), `previous`, or `next` (immediate neighboring identifier components, matched ignoring case). All supplied conditions in one entry must match; separate entries are alternatives. In the example, `pool` is permitted for `sync.Pool`, after `cert` in `rootCertPool`, or between `database` and `options` in `databasePoolOptions`. An unrelated `workerPool` still violates the rule. The exception only removes the finding for that banned component; it does not skip other words, initialisms, or type naming.
+
+`single_letter_params` and `single_letter_receivers` independently override the legacy `single_letter_args` setting. `check_receiver_types: false` turns off receiver type naming without disabling suffix, initialism, or banned-word checks on receivers. In strict mode, set both receiver options to `false` to accept `func (s *Server) Serve()` while still rejecting `func serve(x int)`.
+
+### Testing the module plugin
+
+Follow GolangCI-Lint’s [Module Plugin System](https://golangci-lint.run/docs/plugins/module-plugins/) workflow. From the repository root:
+
+```sh
+golangci-lint custom --destination bin
+go test ./pkg/plugin -run TestGolangCIHost -count=1 -args -golangci-integration
+```
+
+The integration test loads `.golangci.yml` through the custom binary and checks findings by file, line, column, and rule. This is a regression test for the plugin configuration path, not a comparison against a separate analyzer.
 
 ## Presets Comparison
 

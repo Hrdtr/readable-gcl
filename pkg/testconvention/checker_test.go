@@ -4,7 +4,10 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"path/filepath"
 	"regexp"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/hrdtr/readable-gcl/pkg/config"
@@ -163,6 +166,70 @@ func TestCheckTestFunctionName(t *testing.T) {
 	}, "user_test.go", nil, conventionTier)
 	if len(reportedMessages) != 0 {
 		t.Errorf("expected no report for valid Unit suffix, got %v", reportedMessages)
+	}
+}
+
+func TestChecksCanBeDisabledIndependently(t *testing.T) {
+	const source = `package sample
+func TestSample_badUnit() {}
+func TestOtherUnit() {}
+func TestSampleWrongTier() {}
+func TestSampleTableUnit(t *testing.T) {
+	for range []int{1} { t.Error("failure") }
+}
+func TestSampleGoodTableUnit(t *testing.T) {
+	for range []int{1} { t.Run("case", func(t *testing.T) { t.Error("failure") }) }
+}
+`
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, filepath.Join(t.TempDir(), "sample", "orphan_test.go"), source, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	checks := []struct {
+		label   string
+		message string
+		disable func(*config.TestConventionConfig)
+	}{
+		{"pattern", "does not match configured pattern", func(configuration *config.TestConventionConfig) { configuration.Pattern = "" }},
+		{"folder", "must start with", func(configuration *config.TestConventionConfig) { configuration.RequireFolderPrefix = false }},
+		{"tier", "must end with", func(configuration *config.TestConventionConfig) { configuration.RequireTierSuffix = false }},
+		{"table", "must execute cases using t.Run", func(configuration *config.TestConventionConfig) { configuration.EnforceTableSubtests = false }},
+		{"pairing", "has no corresponding implementation file", func(configuration *config.TestConventionConfig) { configuration.RequireMatchingSourceFile = false }},
+	}
+	for index, check := range checks {
+		t.Run(check.label, func(t *testing.T) {
+			configuration := config.TestConventionConfig{
+				Pattern:                   `^Test[A-Z][a-zA-Z0-9]+$`,
+				RequireFolderPrefix:       true,
+				RequireTierSuffix:         true,
+				EnforceTableSubtests:      true,
+				RequireMatchingSourceFile: true,
+			}
+			check.disable(&configuration)
+			var messages []string
+			pass := &analysis.Pass{
+				Fset: fset, Files: []*ast.File{file},
+				Report: func(diag analysis.Diagnostic) { messages = append(messages, diag.Message) },
+			}
+			if _, err := run(pass, configuration); err != nil {
+				t.Fatal(err)
+			}
+			if len(messages) != len(checks)-1 {
+				t.Errorf("expected exactly four findings, got %v", messages)
+			}
+			for otherIndex, other := range checks {
+				if found := slices.ContainsFunc(messages, func(message string) bool { return strings.Contains(message, other.message) }); found != (otherIndex != index) {
+					t.Errorf("%s finding present: %v; got %v", other.label, found, messages)
+				}
+			}
+			messages = nil
+			configuration.SkippedDirectories = []string{"sample"}
+			if _, err := run(pass, configuration); err != nil || len(messages) != 0 {
+				t.Fatalf("skipped directory produced diagnostics %v or error %v", messages, err)
+			}
+		})
 	}
 }
 
