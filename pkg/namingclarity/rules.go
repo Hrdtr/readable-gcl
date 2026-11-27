@@ -3,6 +3,7 @@ package namingclarity
 import (
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // KnownInitialisms contains standard Go acronyms to preserve or lowercase consistently.
@@ -64,12 +65,16 @@ func HasProhibitedSuffix(name string, bannedSuffixes []string) bool {
 	}
 
 	for _, suffix := range bannedSuffixes {
-		if strings.HasSuffix(name, suffix) && len(name) > len(suffix) {
+		if hasRepresentationSuffix(name, suffix) {
 			return true
 		}
 	}
 
 	return false
+}
+
+func hasRepresentationSuffix(name, suffix string) bool {
+	return strings.HasSuffix(name, suffix) && len(name) > len(suffix)
 }
 
 // CheckBadInitialism examines component words for unidiomatic PascalCase initialisms (e.g. "Id", "Url").
@@ -131,7 +136,12 @@ func BareTypeName(concreteName string) string {
 
 // IsSentinelError checks whether an identifier adheres to standard Go error sentinel naming (ErrSomething).
 func IsSentinelError(name string) bool {
-	return strings.HasPrefix(name, "Err") && len(name) > 3 && unicode.IsUpper(rune(name[3]))
+	suffix, hasPrefix := strings.CutPrefix(name, "Err")
+	if !hasPrefix {
+		return false
+	}
+	first, _ := utf8.DecodeRuneInString(suffix)
+	return unicode.IsUpper(first)
 }
 
 func lowerPrefix(value string) string {

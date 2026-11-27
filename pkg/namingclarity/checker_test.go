@@ -132,6 +132,29 @@ func TestShouldReportUnclearName(t *testing.T) {
 	})
 }
 
+func TestGenericMatchingOptIn(t *testing.T) {
+	for _, testcase := range []struct {
+		label, settings string
+		report          bool
+	}{
+		{"pragmatic", "preset: pragmatic", false},
+		{"strict", "preset: strict", true},
+		{"strict explicit false", "preset: strict\nnaming_clarity:\n  generic_type_matching: false", true},
+		{"strict opt-in", "preset: strict\nnaming_clarity:\n  generic_type_matching: true", false},
+		{"enforcement disabled", "preset: strict\nnaming_clarity:\n  enforce_type_tail: false\n  generic_type_matching: true", false},
+	} {
+		t.Run(testcase.label, func(t *testing.T) {
+			configuration, err := config.DecodeYAML([]byte(testcase.settings))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if message, report := shouldReportUnclearName("downloadHandler", "fileTransferHandler", configuration.NamingClarity); report != testcase.report {
+				t.Errorf("report = %v, want %v: %s", report, testcase.report, message)
+			}
+		})
+	}
+}
+
 func TestTypeRuleAlternatives(t *testing.T) {
 	configuration := config.DefaultConfig("strict").NamingClarity
 	configuration.TypeRulesList = []config.TypeRuleEntry{{

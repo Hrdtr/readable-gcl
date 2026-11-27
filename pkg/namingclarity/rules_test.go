@@ -196,4 +196,10 @@ func TestIsSentinelError(t *testing.T) {
 	if namingclarity.IsSentinelError("Errsmall") {
 		t.Error("expected Errsmall to not be sentinel error")
 	}
+	if namingclarity.IsSentinelError("Erré") {
+		t.Error("expected a lowercase Unicode letter after Err to be rejected")
+	}
+	if !namingclarity.IsSentinelError("Err\U00010400") {
+		t.Error("expected an uppercase Unicode letter after Err to be accepted")
+	}
 }

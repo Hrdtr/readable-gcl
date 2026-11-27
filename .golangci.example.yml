@@ -13,23 +13,49 @@ linters:
           preset: strict
 
           naming_clarity:
+            enforce_type_tail: true
+            generic_type_matching: true
             single_letter_params: true
-            single_letter_receivers: false
-            check_receiver_types: false
-            # Lists replace the preset's list; include defaults you want to keep.
+            single_letter_receivers: true
+            check_receiver_types: true
+            # Lists replace the corresponding preset settings.
+            banned_suffixes: [Boolean, Bool, Str, Int]
+            banned_suffix_exceptions:
+              - suffix: Int
+                types: [big.Int]
+            bad_initialisms_list:
+              - {word: Id, replacement: ID}
+              - {word: Url, replacement: URL}
+              - {word: Uuid, replacement: UUID}
+              - {word: Ttl, replacement: TTL}
+              - {word: Jwt, replacement: JWT}
+              - {word: Sid, replacement: SID}
             banned_words: [cfg, mgr, req, res, resp, val, vals, obj, usr, pool]
+            banned_compounds: [tempobj]
             banned_word_exceptions:
               - word: pool
                 types: [sync.Pool]
               - word: pool
                 previous: cert
               - word: pool
+                types: [int]
                 previous: database
                 next: options
             type_rules_list:
               - type: time.Time
                 allowed_names: [time, now, start, end]
                 allowed_suffixes: [Time, Start, End, At, Until, Since]
+              - type: fixture.Subscription
+                allowed_names: [subscription, subscriptionAlias]
+                # Enumerate each form without adding another plural via allow_plural.
+                allowed_suffixes: [Link, Links, Box, Boxes]
+              - type: fixture.DomainResource
+                allow_any_domain_name: true
+              - type: explicit.fileTransferHandler
+                allowed_names: [transfer]
+              - type: error
+                allowed_names: [err]
+                allowed_suffixes: [Err]
 
           test_convention:
             pattern: '^Test[A-Z][a-zA-Z0-9]+$'

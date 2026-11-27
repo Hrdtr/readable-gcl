@@ -13,7 +13,7 @@ func TestAnalyzer(t *testing.T) {
 	defaultConfiguration := config.DefaultConfig("pragmatic")
 	namingAnalyzer := namingclarity.NewAnalyzer(defaultConfiguration.NamingClarity)
 
-	analysistest.Run(t, testdataDirectory, namingAnalyzer, "sample")
+	analysistest.Run(t, testdataDirectory, namingAnalyzer, "./sample")
 }
 
 func TestConfiguredAnalyzer(t *testing.T) {
@@ -72,6 +72,68 @@ var clientConnections net.Conn
 	}
 	t.Cleanup(cleanup)
 	analysistest.Run(t, directory, namingclarity.NewAnalyzer(configuration.NamingClarity), "configured")
+}
+
+func TestGenericMatchingAnalyzer(t *testing.T) {
+	configuration, err := config.DecodeYAML([]byte(`
+preset: strict
+naming_clarity:
+  generic_type_matching: true
+  banned_suffix_exceptions:
+    - suffix: Int
+      types: [big.Int]
+  bad_initialisms_list:
+    - {word: Uuid, replacement: UUID}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory, cleanup, err := analysistest.WriteFiles(map[string]string{"matching/matching.go": `package matching
+import "math/big"
+type fileTransferHandler struct{}
+type FileTransferHandler struct{}
+var userId int
+var userUuid int // want "disallowed initialism casing.*Uuid"
+var totalBigInt big.Int
+var countInt int // want "meaningless representation suffix"
+var wrapped any = FileTransferHandler{}
+var handler fileTransferHandler
+var downloadHandlers fileTransferHandler // want "downloadHandlers.*should be named"
+var downloadFileTransferHandler FileTransferHandler
+var downloadHandler FileTransferHandler // want "downloadHandler.*should be named"
+func mixture() {
+	wrapped = FileTransferHandler{}
+	for _, handler := range []fileTransferHandler{{}} { _ = handler }
+	for _, wrong := range []fileTransferHandler{{}} { _ = wrong } // want "wrong.*should be named"
+}
+`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(cleanup)
+	analysistest.Run(t, directory, namingclarity.NewAnalyzer(configuration.NamingClarity), "matching")
+}
+
+func TestEmptyListsClearLexicalDefaults(t *testing.T) {
+	configuration, err := config.Decode(map[string]any{
+		"naming_clarity": map[string]any{
+			"bad_initialisms_list":     []any{},
+			"banned_suffix_exceptions": []any{},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory, cleanup, err := analysistest.WriteFiles(map[string]string{"empty/empty.go": `package empty
+import "math/big"
+var userId int
+var totalBigInt big.Int // want "meaningless representation suffix"
+`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(cleanup)
+	analysistest.Run(t, directory, namingclarity.NewAnalyzer(configuration.NamingClarity), "empty")
 }
 
 func TestAnalyzerDisabled(t *testing.T) {

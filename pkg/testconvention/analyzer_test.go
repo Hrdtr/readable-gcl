@@ -13,7 +13,7 @@ func TestAnalyzerPragmatic(t *testing.T) {
 	defaultConfiguration := config.DefaultConfig("pragmatic")
 	testConventionAnalyzer := testconvention.NewAnalyzer(defaultConfiguration.TestConvention)
 
-	analysistest.Run(t, testdataDirectory, testConventionAnalyzer, "testsample")
+	analysistest.Run(t, testdataDirectory, testConventionAnalyzer, "./testsample")
 }
 
 func TestAnalyzerStrictConfig(t *testing.T) {
@@ -31,5 +31,5 @@ func TestAnalyzerMatchingSourceFile(t *testing.T) {
 	customConfiguration.RequireMatchingSourceFile = true
 
 	analyzer := testconvention.NewAnalyzer(customConfiguration)
-	analysistest.Run(t, testdataDirectory, analyzer, "filematching")
+	analysistest.Run(t, testdataDirectory, analyzer, "./filematching")
 }

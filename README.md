@@ -119,23 +119,49 @@ linters:
           preset: strict
 
           naming_clarity:
+            enforce_type_tail: true
+            generic_type_matching: true
             single_letter_params: true
-            single_letter_receivers: false
-            check_receiver_types: false
-            # Lists replace the preset's list; include defaults you want to keep.
+            single_letter_receivers: true
+            check_receiver_types: true
+            # Lists replace the corresponding preset settings.
+            banned_suffixes: [Boolean, Bool, Str, Int]
+            banned_suffix_exceptions:
+              - suffix: Int
+                types: [big.Int]
+            bad_initialisms_list:
+              - {word: Id, replacement: ID}
+              - {word: Url, replacement: URL}
+              - {word: Uuid, replacement: UUID}
+              - {word: Ttl, replacement: TTL}
+              - {word: Jwt, replacement: JWT}
+              - {word: Sid, replacement: SID}
             banned_words: [cfg, mgr, req, res, resp, val, vals, obj, usr, pool]
+            banned_compounds: [tempobj]
             banned_word_exceptions:
               - word: pool
                 types: [sync.Pool]
               - word: pool
                 previous: cert
               - word: pool
+                types: [int]
                 previous: database
                 next: options
             type_rules_list:
               - type: time.Time
                 allowed_names: [time, now, start, end]
                 allowed_suffixes: [Time, Start, End, At, Until, Since]
+              - type: fixture.Subscription
+                allowed_names: [subscription, subscriptionAlias]
+                # Enumerate each form without adding another plural via allow_plural.
+                allowed_suffixes: [Link, Links, Box, Boxes]
+              - type: fixture.DomainResource
+                allow_any_domain_name: true
+              - type: explicit.fileTransferHandler
+                allowed_names: [transfer]
+              - type: error
+                allowed_names: [err]
+                allowed_suffixes: [Err]
 
           test_convention:
             pattern: '^Test[A-Z][a-zA-Z0-9]+$'
@@ -152,15 +178,20 @@ linters:
 
 See [`.golangci.example.yml`](.golangci.example.yml) for a complete GolangCI-Lint configuration. The GolangCI-Lint loader (verified with v2.13.2 and v2.15.0) lowercases map keys inside plugin settings (even quoted `"time.Time"`). Set `type_rules_list` in `.golangci.yml` so the Go type is a **value** and keeps its case. The original `type_rules` map remains supported in standalone YAML or when passed to `config.Decode` with its keys intact.
 
-- Each entry replaces the **whole rule for that type**; unmentioned types keep their preset rules. List entries take priority over map entries for the same type, and the last list entry wins if a type is repeated. `type_rules_list: []` supplies no overrides and leaves preset rules in place.
-- Within a rule, `allowed_names` and `canonical_name` are exact, case-sensitive alternatives. `allowed_suffixes` and `expected_tail` are literal, case-sensitive suffix alternatives. `allow_plural: true` also permits each suffix followed by `s`. Empty lists add no alternatives; a rule with no names or suffixes rejects every name subject to that rule unless `allow_any_domain_name: true` is set or the existing `ErrX` sentinel convention applies to `error`.
-- Other slice settings (such as `banned_words`, `banned_suffixes`, `banned_compounds`, `banned_word_exceptions`, `exempt_identifiers`, and `skipped_dirs`) replace the preset list when present; `[]` clears it. Omit the setting to inherit the preset.
+- Each entry replaces the **whole rule for that type**; unmentioned types keep their preset rules. List entries take priority over map entries for the same type, and the last list entry wins if a type is repeated. `type_rules_list: []` supplies no overrides and leaves preset rules in place. A rejection by a type rule never falls back to generic matching.
+- Within a rule, `allowed_names` and `canonical_name` are exact, case-sensitive alternatives. `allowed_suffixes` and `expected_tail` are literal, case-sensitive suffix alternatives. `allow_plural: true` also permits each suffix followed by `s`. To support a precise set of `s` and `es` forms, enumerate the singulars and plurals and leave `allow_plural` false so that a second `s` is not added. Empty lists add no alternatives; a rule with no names or suffixes rejects every name subject to that rule unless `allow_any_domain_name: true` is set or the existing `ErrX` sentinel convention applies to `error`.
+- With `enforce_type_tail: true`, `generic_type_matching: true` applies the opt-in policy to unlisted types. It accepts case-insensitive exact names and full type suffixes, including after removing one trailing lowercase `s`. For unexported types, shorter suffixes starting at uppercase letters also match exactly (ignoring case) or as case-sensitive suffixes, without the plural allowance. Omit `generic_type_matching` or set it to `false` for the legacy matcher. `enforce_type_tail: false` disables unlisted-type enforcement without disabling explicit type rules.
+- Slice settings such as `banned_words`, `banned_suffixes`, `banned_compounds`, `banned_word_exceptions`, `exempt_identifiers`, and `skipped_dirs` replace the preset list when present; `[]` clears it. Omit the setting to inherit the preset. An explicit `false` disables the corresponding boolean feature, even if the preset enables it; `pattern: ""` disables just the test-name pattern.
 
-### Banned-word exceptions and receiver scope
+### Lexical rules and receiver checks
 
-`banned_word_exceptions` entries use `word` plus at least one condition: `types` (exact resolved type names such as `sync.Pool`), `previous`, or `next` (immediate neighboring identifier components, matched ignoring case). All supplied conditions in one entry must match; separate entries are alternatives. In the example, `pool` is permitted for `sync.Pool`, after `cert` in `rootCertPool`, or between `database` and `options` in `databasePoolOptions`. An unrelated `workerPool` still violates the rule. The exception only removes the finding for that banned component; it does not skip other words, initialisms, or type naming.
+Use `bad_initialisms_list` in GolangCI-Lint so case-sensitive components like `Id` and `Url` survive the loader. When present, the list replaces the entire preset or legacy `bad_initialisms` map; last entry for a component wins, and `[]` disables the check. The map remains supported when keys are preserved.
 
-`single_letter_params` and `single_letter_receivers` independently override the legacy `single_letter_args` setting. `check_receiver_types: false` turns off receiver type naming without disabling suffix, initialism, or banned-word checks on receivers. In strict mode, set both receiver options to `false` to accept `func (s *Server) Serve()` while still rejecting `func serve(x int)`.
+`banned_suffix_exceptions` takes a literal banned `suffix` and a `types` list. The exception applies only to that suffix on those resolved named types (including pointers and aliases), not to other banned suffixes or other checks. Omit the list to retain the legacy `BigInt`/`BigInteger` exceptions; set it to `[]` to apply `banned_suffixes` without exceptions.
+
+`banned_word_exceptions` entries use `word` plus at least one condition: `types` (exact resolved type names such as `sync.Pool`), `previous`, or `next` (immediate neighboring identifier components, matched ignoring case). All supplied conditions in one entry must match; separate entries are alternatives. In the example, `pool` is permitted for `sync.Pool`, after `cert` in `rootCertPool`, or between `database` and `options` when the identifier is an `int`. An unrelated `workerPool` still violates the rule. The exception only removes the finding for that banned component; it does not skip other words, initialisms, or type naming.
+
+`single_letter_params` and `single_letter_receivers` independently override the legacy `single_letter_args` setting. `check_receiver_types: false` turns off receiver type naming without disabling suffix, initialism, or banned-word checks on receivers. The example keeps receiver, parameter, and named-result checks enabled.
 
 ### Testing the module plugin
 
@@ -171,7 +202,29 @@ golangci-lint custom --destination bin
 go test ./pkg/plugin -run TestGolangCIHost -count=1 -args -golangci-integration
 ```
 
-The integration test loads `.golangci.yml` through the custom binary and checks findings by file, line, column, and rule. This is a regression test for the plugin configuration path, not a comparison against a separate analyzer.
+The integration test loads the example unchanged as `.golangci.yml` through the custom binary. Every `// want:` marker in the fixtures names the required rule and diagnostic; unmarked locations must produce no finding.
+
+### Rule-to-setting checklist
+
+| Rule | Setting in the example | Passing host fixture: accepted → rejected |
+| --- | --- | --- |
+| Generic unexported names | `enforce_type_tail`, `generic_type_matching` | [`fixture/naming.go`](pkg/namingclarity/testdata/contract/fixture/naming.go): `handler`, `downloadHandler`, `cachedfiletransferhandler`, `cachedFileTransferHandlers` → `downloadHandlers`, `downloadhandler`, `banana` |
+| Generic exported names | Same settings, no per-type override | `fixture/naming.go`: `fileTransferHandler`, `downloadFileTransferHandler` → `handler`, `downloadHandler`, `cachedfiletransferhandlerss` |
+| Aliases, pointers, and unresolved types | Resolved by the analyzer | `fixture/naming.go`: `downloadTransferHandler` through an alias to a double pointer; `payload` of type `any` stays lexical → `userId` still fails lexical casing |
+| Exact rule overrides generic matching | `type_rules_list` entry for `explicit.fileTransferHandler` | [`explicit/naming.go`](pkg/namingclarity/testdata/contract/explicit/naming.go): `transfer` → `handler` |
+| Literal names, suffixes, and plurals | `allowed_names`, `allowed_suffixes`, including `Links` and `Boxes` | `fixture/naming.go`: `subscriptionAlias`, `backupLinks`, `priorityBoxes` → `SubscriptionAlias`, `prioritybox`, `backupLinkss`, `priorityBoxess` |
+| Any domain name | `allow_any_domain_name: true` | `fixture/naming.go`: `inventory` → `inventoryCfg` still fails the word rule |
+| Mixed-case type key | `type_rules_list` with `type: time.Time` | `fixture/naming.go`: `now`, `createdAt`, `lockedUntil` → `banana`, `createdAtValue`, and `now` on an unrelated type |
+| Representation suffixes | `banned_suffixes`, `banned_suffix_exceptions` | `fixture/naming.go`: `totalBigInt` on `big.Int` → `countInt` and `totalBigInt` on `int` |
+| Initialism casing | `bad_initialisms_list` | `fixture/naming.go`: `userID`, `serverURL`, `userUUID` → `userId`, `serverUrl`, `userUuid` |
+| Banned words and conditional exceptions | `banned_words`, `banned_word_exceptions` | `fixture/naming.go`: `pool`, `rootCertPool`, `databasePoolOptions` → `workerPool`, `databasePool`, `otherDatabasePoolOptions`; `poolCfg`, `poolId`, and `poolWrapper` still fail their own rules |
+| Compound substrings | `banned_compounds` | `fixture/naming.go`: `temporaryObject` → `mytempobject`, `poolTempobj` |
+| Error names | Explicit `error` rule and the sentinel convention | `fixture/naming.go`: `err`, `readErr`, `ErrNotFound`, `ErrÉchec` → `error`, `readError`, `ErrnotFound`, `Erré` |
+| Receiver, parameter, and named-result naming | `single_letter_receivers`, `check_receiver_types`, `single_letter_params`, type rules | `fixture/naming.go`: `server`, `count`, `fileTransferHandler` → `s`, `wrongReceiver`, `x`, `wrongParameter`, `wrongResult` |
+| Test-name pattern and folder prefix | `pattern`, `require_folder_prefix` | [`suite/suite_test.go`](pkg/testconvention/testdata/contract/suite/suite_test.go): `TestSuiteWorksUnit` → `TestSuite_badUnit`, `TestOtherWorksUnit` |
+| Test tier | `require_tier_suffix` | [`suite`](pkg/testconvention/testdata/contract/suite): matching unit, integration, and E2E suffixes → the wrong tier in each file |
+| Table subtests | `enforce_table_subtests` | `suite/suite_test.go`: loop with `t.Run` → loop asserting without `t.Run` |
+| File pairing and skipped directories | `require_matching_source_file`, `skipped_dirs` | `suite/suite_test.go` is paired by folder; [`suite/orphan_test.go`](pkg/testconvention/testdata/contract/suite/orphan_test.go) is rejected; [`ignored/orphan_test.go`](pkg/testconvention/testdata/contract/ignored/orphan_test.go) skips test conventions but still reports `userId` |
 
 ## Presets Comparison
 

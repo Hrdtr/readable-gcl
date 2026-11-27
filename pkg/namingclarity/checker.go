@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/hrdtr/readable-gcl/pkg/config"
 	"golang.org/x/tools/go/analysis"
@@ -158,16 +159,24 @@ func checkStructFields(pass *analysis.Pass, structFieldList []*ast.Field, config
 }
 
 func checkAssignment(pass *analysis.Pass, assignmentStatement *ast.AssignStmt, configuration config.NamingClarityConfig) {
+	useResolvedType := genericTypeMatchingEnabled(configuration)
 	for _, leftHandExpr := range assignmentStatement.Lhs {
 		if identifier, isIdent := leftHandExpr.(*ast.Ident); isIdent {
-			checkProhibitedSuffix(pass, identifier, configuration)
+			if useResolvedType {
+				inspectResolvedIdentifier(pass, identifier, configuration)
+			} else {
+				checkProhibitedSuffix(pass, identifier, configuration)
+			}
 		}
+	}
+	if useResolvedType {
+		return
 	}
 
 	if len(assignmentStatement.Lhs) == len(assignmentStatement.Rhs) {
 		for assignmentIndex, rightHandExpr := range assignmentStatement.Rhs {
 			identifier, isIdent := assignmentStatement.Lhs[assignmentIndex].(*ast.Ident)
-			if !isIdent || HasProhibitedSuffix(identifier.Name, configuration.BannedSuffixes) {
+			if !isIdent || hasBannedRepresentationSuffix(pass, identifier, configuration) {
 				continue
 			}
 
@@ -186,7 +195,7 @@ func checkAssignment(pass *analysis.Pass, assignmentStatement *ast.AssignStmt, c
 		if tupleType, isTuple := rightHandType.(*types.Tuple); isTuple && tupleType.Len() == len(assignmentStatement.Lhs) {
 			for tupleIndex, leftHandExpr := range assignmentStatement.Lhs {
 				identifier, isIdent := leftHandExpr.(*ast.Ident)
-				if !isIdent || HasProhibitedSuffix(identifier.Name, configuration.BannedSuffixes) {
+				if !isIdent || hasBannedRepresentationSuffix(pass, identifier, configuration) {
 					continue
 				}
 
@@ -198,7 +207,7 @@ func checkAssignment(pass *analysis.Pass, assignmentStatement *ast.AssignStmt, c
 
 		for _, leftHandExpr := range assignmentStatement.Lhs {
 			identifier, isIdent := leftHandExpr.(*ast.Ident)
-			if !isIdent || HasProhibitedSuffix(identifier.Name, configuration.BannedSuffixes) {
+			if !isIdent || hasBannedRepresentationSuffix(pass, identifier, configuration) {
 				continue
 			}
 			concreteTypeName, _ := resolveConcreteTypeNameFromIdent(pass, identifier)
@@ -208,6 +217,13 @@ func checkAssignment(pass *analysis.Pass, assignmentStatement *ast.AssignStmt, c
 }
 
 func checkValueSpec(pass *analysis.Pass, valueSpecification *ast.ValueSpec, configuration config.NamingClarityConfig) {
+	if genericTypeMatchingEnabled(configuration) {
+		for _, identifier := range valueSpecification.Names {
+			inspectResolvedIdentifier(pass, identifier, configuration)
+		}
+		return
+	}
+
 	var typeConcreteName string
 	var hasTypeConcreteName bool
 	if valueSpecification.Type != nil {
@@ -231,12 +247,25 @@ func checkValueSpec(pass *analysis.Pass, valueSpecification *ast.ValueSpec, conf
 }
 
 func checkRange(pass *analysis.Pass, rangeStatement *ast.RangeStmt, configuration config.NamingClarityConfig) {
-	if keyIdentifier, isIdent := rangeStatement.Key.(*ast.Ident); isIdent {
-		inspectIdentifier(pass, keyIdentifier, "", configuration)
+	for _, expression := range []ast.Expr{rangeStatement.Key, rangeStatement.Value} {
+		if identifier, isIdent := expression.(*ast.Ident); isIdent {
+			if genericTypeMatchingEnabled(configuration) {
+				inspectResolvedIdentifier(pass, identifier, configuration)
+			} else {
+				inspectIdentifier(pass, identifier, "", configuration)
+			}
+		}
 	}
-	if valueIdentifier, isIdent := rangeStatement.Value.(*ast.Ident); isIdent {
-		inspectIdentifier(pass, valueIdentifier, "", configuration)
-	}
+}
+
+func genericTypeMatchingEnabled(configuration config.NamingClarityConfig) bool {
+	return configuration.EnforceTypeTail && configuration.GenericTypeMatching
+}
+
+func inspectResolvedIdentifier(pass *analysis.Pass, identifier *ast.Ident, configuration config.NamingClarityConfig) {
+	// An initializer may have a different type from the variable it is assigned to.
+	concreteTypeName, _ := resolveConcreteTypeNameFromIdent(pass, identifier)
+	inspectIdentifier(pass, identifier, concreteTypeName, configuration)
 }
 
 func inspectIdentifier(pass *analysis.Pass, identifier *ast.Ident, concreteTypeName string, configuration config.NamingClarityConfig) bool {
@@ -257,7 +286,7 @@ func checkProhibitedSuffix(pass *analysis.Pass, identifier *ast.Ident, configura
 		return false
 	}
 
-	if HasProhibitedSuffix(identifier.Name, configuration.BannedSuffixes) {
+	if hasBannedRepresentationSuffix(pass, identifier, configuration) {
 		pass.Reportf(
 			identifier.Pos(),
 			"meaningless representation suffix prohibited: %s",
@@ -266,6 +295,25 @@ func checkProhibitedSuffix(pass *analysis.Pass, identifier *ast.Ident, configura
 		return true
 	}
 
+	return false
+}
+
+func hasBannedRepresentationSuffix(pass *analysis.Pass, identifier *ast.Ident, configuration config.NamingClarityConfig) bool {
+	if configuration.BannedSuffixExceptions == nil {
+		return HasProhibitedSuffix(identifier.Name, configuration.BannedSuffixes)
+	}
+
+	for _, suffix := range configuration.BannedSuffixes {
+		if !hasRepresentationSuffix(identifier.Name, suffix) {
+			continue
+		}
+		typeName, resolved := resolveConcreteTypeNameFromIdent(pass, identifier)
+		if !resolved || !slices.ContainsFunc(configuration.BannedSuffixExceptions, func(exception config.BannedSuffixException) bool {
+			return exception.Suffix == suffix && slices.Contains(exception.Types, typeName)
+		}) {
+			return true
+		}
+	}
 	return false
 }
 
@@ -408,6 +456,10 @@ func shouldReportUnclearName(identifierName string, concreteTypeName string, con
 
 	bareName := BareTypeName(concreteTypeName)
 	canonicalName := CanonicalVariableName(bareName)
+	if configuration.GenericTypeMatching {
+		message := genericTypeMismatch(identifierName, bareName, canonicalName)
+		return message, message != ""
+	}
 	expectedTail := strings.ToUpper(bareName[:1]) + bareName[1:]
 
 	if strings.EqualFold(identifierName, bareName) || strings.EqualFold(identifierName, canonicalName) {
@@ -421,6 +473,37 @@ func shouldReportUnclearName(identifierName string, concreteTypeName string, con
 	}
 
 	return fmt.Sprintf("%q should be named %q or suffixed with %q", identifierName, canonicalName, expectedTail), true
+}
+
+func genericTypeMismatch(name, bareType, canonicalName string) string {
+	if strings.EqualFold(name, canonicalName) || hasFoldedSuffix(name, bareType) ||
+		hasFoldedSuffix(strings.TrimSuffix(name, "s"), bareType) {
+		return ""
+	}
+
+	message := fmt.Sprintf("%q should be named %q or suffixed with %q (case-insensitive, optionally followed by s)", name, canonicalName, bareType)
+	if !ast.IsExported(bareType) {
+		for index, letter := range bareType {
+			if index == 0 || !unicode.IsUpper(letter) {
+				continue
+			}
+			shorter := bareType[index:]
+			if strings.EqualFold(name, shorter) || strings.HasSuffix(name, shorter) {
+				return ""
+			}
+			message += fmt.Sprintf(", or match %q exactly (case-insensitive) or as a case-sensitive suffix", shorter)
+		}
+	}
+	return message
+}
+
+func hasFoldedSuffix(name, suffix string) bool {
+	end := len(name)
+	for range suffix {
+		_, size := utf8.DecodeLastRuneInString(name[:end])
+		end -= size
+	}
+	return strings.EqualFold(name[end:], suffix)
 }
 
 func configuredTypeRule(concreteTypeName string, configuration config.NamingClarityConfig) (config.TypeRule, bool) {

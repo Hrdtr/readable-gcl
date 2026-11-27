@@ -31,22 +31,37 @@ type BannedWordException struct {
 	Next     string   `json:"next" yaml:"next"`
 }
 
+// BannedSuffixException exempts one representation suffix for the listed named types.
+type BannedSuffixException struct {
+	Suffix string   `json:"suffix" yaml:"suffix"`
+	Types  []string `json:"types" yaml:"types"`
+}
+
+// InitialismRule carries the case-sensitive component as a value for module plugin settings.
+type InitialismRule struct {
+	Word        string `json:"word" yaml:"word"`
+	Replacement string `json:"replacement" yaml:"replacement"`
+}
+
 // NamingClarityConfig defines settings for the namingclarity analyzer.
 type NamingClarityConfig struct {
-	Enabled               bool                  `json:"enabled" yaml:"enabled"`
-	SingleLetterArgs      bool                  `json:"single_letter_args" yaml:"single_letter_args"`
-	SingleLetterParams    *bool                 `json:"single_letter_params" yaml:"single_letter_params"`
-	SingleLetterReceivers *bool                 `json:"single_letter_receivers" yaml:"single_letter_receivers"`
-	CheckReceiverTypes    *bool                 `json:"check_receiver_types" yaml:"check_receiver_types"`
-	BannedWordExceptions  []BannedWordException `json:"banned_word_exceptions" yaml:"banned_word_exceptions"`
-	TypeRulesList         []TypeRuleEntry       `json:"type_rules_list" yaml:"type_rules_list"`
-	BannedSuffixes        []string              `json:"banned_suffixes" yaml:"banned_suffixes"`
-	BadInitialisms        map[string]string     `json:"bad_initialisms" yaml:"bad_initialisms"`
-	BannedWords           []string              `json:"banned_words" yaml:"banned_words"`
-	BannedCompounds       []string              `json:"banned_compounds" yaml:"banned_compounds"`
-	EnforceTypeTail       bool                  `json:"enforce_type_tail" yaml:"enforce_type_tail"`
-	TypeRules             map[string]TypeRule   `json:"type_rules" yaml:"type_rules"`
-	ExemptIdentifiers     []string              `json:"exempt_identifiers" yaml:"exempt_identifiers"`
+	Enabled                bool                    `json:"enabled" yaml:"enabled"`
+	SingleLetterArgs       bool                    `json:"single_letter_args" yaml:"single_letter_args"`
+	SingleLetterParams     *bool                   `json:"single_letter_params" yaml:"single_letter_params"`
+	SingleLetterReceivers  *bool                   `json:"single_letter_receivers" yaml:"single_letter_receivers"`
+	CheckReceiverTypes     *bool                   `json:"check_receiver_types" yaml:"check_receiver_types"`
+	BannedWordExceptions   []BannedWordException   `json:"banned_word_exceptions" yaml:"banned_word_exceptions"`
+	TypeRulesList          []TypeRuleEntry         `json:"type_rules_list" yaml:"type_rules_list"`
+	BannedSuffixes         []string                `json:"banned_suffixes" yaml:"banned_suffixes"`
+	BannedSuffixExceptions []BannedSuffixException `json:"banned_suffix_exceptions" yaml:"banned_suffix_exceptions"`
+	BadInitialisms         map[string]string       `json:"bad_initialisms" yaml:"bad_initialisms"`
+	BadInitialismsList     []InitialismRule        `json:"bad_initialisms_list" yaml:"bad_initialisms_list"`
+	BannedWords            []string                `json:"banned_words" yaml:"banned_words"`
+	BannedCompounds        []string                `json:"banned_compounds" yaml:"banned_compounds"`
+	EnforceTypeTail        bool                    `json:"enforce_type_tail" yaml:"enforce_type_tail"`
+	GenericTypeMatching    bool                    `json:"generic_type_matching" yaml:"generic_type_matching"`
+	TypeRules              map[string]TypeRule     `json:"type_rules" yaml:"type_rules"`
+	ExemptIdentifiers      []string                `json:"exempt_identifiers" yaml:"exempt_identifiers"`
 }
 
 // TestConventionConfig defines settings for the testconvention analyzer.

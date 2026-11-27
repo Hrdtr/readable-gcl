@@ -15,6 +15,12 @@ var Analyzer = NewAnalyzer(config.DefaultConfig("pragmatic").NamingClarity)
 
 // NewAnalyzer creates a configured analysis.Analyzer using the supplied NamingClarityConfig.
 func NewAnalyzer(configuration config.NamingClarityConfig) *analysis.Analyzer {
+	if configuration.BadInitialismsList != nil {
+		configuration.BadInitialisms = make(map[string]string, len(configuration.BadInitialismsList))
+		for _, rule := range configuration.BadInitialismsList {
+			configuration.BadInitialisms[rule.Word] = rule.Replacement
+		}
+	}
 	return &analysis.Analyzer{
 		Name: AnalyzerName,
 		Doc:  AnalyzerDoc,
